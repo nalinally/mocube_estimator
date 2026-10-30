@@ -11,9 +11,12 @@ ROS に依存しないので単体テストできる。
 
 積算のしかた:
   推定位置から接触している組を探し、組ごとに「正の側 - 負の側」の相対速度を
-  両側のサーボ指令から決める (駆動していない向きは 0 = くっついたまま)。
+  両側のサーボ指令から決める (面内で駆動していない向きは 0 = くっついたまま)。
   これを全モジュールの速度についての連立方程式にして、ID0 の速度を 0 に固定して最小二乗で解く。
   ループ状につながっていても、複数のサーボを同時に回しても同じ式で扱える。
+  面に垂直な向きは拘束されないので、軸ごとに、その軸に垂直な接触の式だけで解く。
+  その式で互いの動きが決まらない塊どうしは、面に垂直な接触を最も多く保つ速さにする
+  (磁石をなるべく剥がさない。同数なら ID の小さい組を保つ)。
 """
 
 from dataclasses import dataclass, field
@@ -268,11 +271,62 @@ class Estimator:
                 incidence[row, column[contact.lower]] = -1.0
             target[row] = self.relative_velocity(contact)
 
-        # どこにも接していない塊は解が決まらないので、lstsq の最小ノルム解 (=止まっている) になる
-        solution, *_ = np.linalg.lstsq(incidence, target, rcond=None)
-        for module_id, k in column.items():
-            result[module_id] = solution[k]
+        for axis in range(3):
+            in_plane = [row for row, contact in enumerate(contacts) if contact.axis != axis]
+            # どこにも接していない塊は解が決まらないので、lstsq の最小ノルム解 (=止まっている) になる
+            solution, *_ = np.linalg.lstsq(
+                incidence[in_plane], target[in_plane, axis], rcond=None)
+            speeds = {i: solution[k] for i, k in column.items()}
+            speeds[FIXED_ID] = 0.0
+            self._keep_normal_contacts(
+                speeds,
+                [c for c in contacts if c.axis != axis],
+                [c for c in contacts if c.axis == axis])
+            for module_id in free_ids:
+                result[module_id][axis] = speeds[module_id]
         return result
+
+    @staticmethod
+    def _keep_normal_contacts(speeds, in_plane, normal):
+        """
+        面内の接触でつながる塊ごとに speeds をずらし、面に垂直な接触をなるべく保つ.
+
+        ID0 の塊から順に、決まった塊と接している塊の速さを多数決で決める。
+        """
+        group = {module_id: module_id for module_id in speeds}
+
+        def find(module_id):
+            while group[module_id] != module_id:
+                module_id = group[module_id]
+            return module_id
+
+        for contact in in_plane:
+            if contact.lower in group and contact.upper in group:
+                group[find(contact.lower)] = find(contact.upper)
+
+        settled = {find(FIXED_ID)}
+        ordered = sorted(normal, key=lambda c: (c.lower, c.upper))
+        while True:
+            votes = {}
+            for contact in ordered:
+                lower, upper = find(contact.lower), find(contact.upper)
+                if (lower in settled) == (upper in settled):
+                    continue
+                # 決まっていない塊をいくらずらせば、この接触の相対速度が 0 になるか
+                difference = speeds[contact.lower] - speeds[contact.upper]
+                shift = difference if lower in settled else -difference
+                moving = upper if lower in settled else lower
+                key = round(shift, 9)
+                count = votes.setdefault(moving, {}).get(key, 0)
+                votes[moving][key] = count + 1
+            if not votes:
+                return
+            moving = next(iter(votes))
+            shift = max(votes[moving], key=votes[moving].get)
+            for module_id in speeds:
+                if find(module_id) == moving:
+                    speeds[module_id] += shift
+            settled.add(moving)
 
     def step(self, dt):
         """時間 dt [s] だけ位置を進める."""

@@ -56,6 +56,46 @@ def test_chain_moves_together():
     np.testing.assert_allclose(position(estimator, 2), [2 * L, 0.01, 0])
 
 
+def test_slide_leaves_contact_behind():
+    # 2 は 1 の上を +x へ滑り、後ろの 3 から離れる。3 に引きずられない
+    estimator = make_estimator({0: (0, 0, 0), 1: (1, 0, 0), 2: (1, 0, 1), 3: (0, 0, 1)})
+    estimator.set_servo(1, 0, 100.0)
+    estimator.step(0.1)
+    # 0.001 * 100 * 0.1 = 0.01 m
+    assert position(estimator, 2) == pytest.approx((L + 0.01, 0.0, L), abs=1e-6)
+    assert position(estimator, 3) == pytest.approx((0.0, 0.0, L), abs=1e-6)
+
+
+def test_slide_reaches_contact_in_front():
+    # 2 は 0 の上を +x へ滑り、前の 3 に近づく。3 に止められない
+    estimator = make_estimator({0: (0, 0, 0), 1: (1, 0, 0), 2: (0, 0, 1), 3: (1, 0, 1)})
+    estimator.modules[2].position = np.array([-0.05 * L, 0.0, L])
+    estimator.set_servo(0, 0, 100.0)
+    estimator.step(0.01)
+    assert position(estimator, 2) == pytest.approx((-0.05 * L + 0.001, 0.0, L), abs=1e-6)
+    assert position(estimator, 3) == pytest.approx((L, 0.0, L), abs=1e-6)
+
+
+def test_keeps_the_most_normal_contacts():
+    # 1 と 2 の間を滑らせる。2 の側は垂直な接触が 1 つ、1 の側は 2 つなので、2 が離れる
+    estimator = make_estimator({
+        0: (0, 0, 0), 1: (1, 0, 0), 2: (1, 0, 1), 3: (0, 0, 1),
+        4: (0, 1, 0), 5: (1, 1, 0)})
+    estimator.set_servo(1, 0, 100.0)
+    estimator.step(0.1)
+    assert position(estimator, 1) == pytest.approx((L, 0.0, 0.0), abs=1e-6)
+    assert position(estimator, 2) == pytest.approx((L + 0.01, 0.0, L), abs=1e-6)
+
+
+def test_normal_contact_holds_when_nothing_else_decides():
+    # 1 は 0 と x 軸の接触だけでつながる。1 の上の 2 を x へ滑らせても、1 は 0 から離れない
+    estimator = make_estimator({0: (0, 0, 0), 1: (1, 0, 0), 2: (1, 0, 1)})
+    estimator.set_servo(1, 0, 100.0)
+    estimator.step(0.1)
+    assert position(estimator, 1) == pytest.approx((L, 0.0, 0.0), abs=1e-6)
+    assert position(estimator, 2) == pytest.approx((L + 0.01, 0.0, L), abs=1e-6)
+
+
 def test_ignores_undeliverable_commands():
     estimator = make_estimator({0: (0, 0, 0), 1: (1, 0, 0)})
     estimator.update_modules([(0, False)])
