@@ -78,7 +78,7 @@ ros2 service call /set_grid_positions mocube_msgs/srv/SetGridPositions \
 
 | 名前 | 既定値 | 内容 |
 |---|---|---|
-| `edge_length_mm` | 110.3 | モジュールの一辺 [mm] |
+| `edge_length_mm` | 113.1 | モジュールの一辺 [mm] |
 | `speed_gain_mm` | 0.2 | 回転指令 1 deg あたりの相対移動速度 [mm/s]。**未測定の仮の値** |
 | `deadband_deg` | 0.0 | この大きさ以下の回転指令は停止とみなす [deg] |
 | `contact_tolerance` | 0.1 | 接触判定の許容 (一辺に対する割合) |

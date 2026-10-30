@@ -55,7 +55,7 @@ class StateEstimator(Node):
     def __init__(self):
         super().__init__('state_estimator')
 
-        edge_length_mm = self.declare_parameter('edge_length_mm', 110.3).value
+        edge_length_mm = self.declare_parameter('edge_length_mm', 113.1).value
         # 回転指令 1 deg あたりの相対移動速度 [mm/s]。未測定の仮の値
         speed_gain_mm = self.declare_parameter('speed_gain_mm', 0.2).value
         deadband = self.declare_parameter('deadband_deg', 0.0).value
